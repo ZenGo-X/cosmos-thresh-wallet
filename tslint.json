@@ -1,0 +1,10 @@
+{
+  "defaultSeverity": "warning",
+  "extends": ["tslint:recommended"],
+  "jsRules": {},
+  "rules": {
+    "no-console": false,
+    "no-unused-variable": [true, { "ignore-pattern": "^_" }]
+  },
+  "rulesDirectory": []
+}
