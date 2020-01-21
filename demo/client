@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+
+const program = require('commander');
+const fs = require('fs');
+const path = require('path');
+const low = require('lowdb');
+const FileSync = require('lowdb/adapters/FileSync');
+const CLIENT_DB_PATH = path.join(__dirname, 'client-db');
+const { getBalance, transfer } = require('../dist/src');
+const { Address, AccAddress} = require('../dist/src');
+
+const terra = require('@terra-money/core');
+
+function ensureDirSync(dirpath) {
+    try {
+        fs.mkdirSync(dirpath, { recursive: true });
+    } catch (err) {
+        if (err.code !== 'EEXIST') throw err;
+    }
+}
+
+function mnemonicToAddress(mnemonic) {
+    const masterKey = terra.deriveMasterKeySync(mnemonic);
+    const keypair = terra.deriveKeypair(masterKey);
+    const address = AccAddress.fromPublicKey(keypair.publicKey);
+    return address.toBech32();
+}
+
+function mnemonicToPrivateKey(mnemonic) {
+    const masterKey = terra.deriveMasterKeySync(mnemonic);
+    const keypair = terra.deriveKeypair(masterKey);
+    return keypair.privateKey;
+}
+
+
+ensureDirSync(CLIENT_DB_PATH);
+const adapter = new FileSync(path.join(CLIENT_DB_PATH, 'db.json'));
+const db = low(adapter);
+db.defaults({ addresses: [] }).write();
+
+program
+    .command('address')
+    .action( () => {
+        const mnemonic = terra.generateMnemonic();
+        const address = mnemonicToAddress(mnemonic);
+        console.log(address);
+        db.get('addresses').push({ address, mnemonic }).write();
+    });
+
+/**
+ * response example:
+ *
+ * { balance:
+   [ { denom: 'uluna',
+       available: '10000000',
+       delegatedVesting: '0',
+       delegatable: '10000000',
+       freedVesting: '0',
+       unbonding: '0',
+       remainingVesting: '0' },
+     { denom: 'uusd',
+       available: '10000000',
+       delegatedVesting: '0',
+       delegatable: '0',
+       freedVesting: '0',
+       unbonding: '0',
+       remainingVesting: '0' } ],
+  vesting: [],
+  delegations: [],
+  unbondings: [] }
+ */
+program
+    .command('balance <address>')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
+    .action(async (address, options) => {
+        console.log(await getBalance(address, options.network || 'gaia'));
+    });
+
+program
+    .command('transfer <from> <to> <amount>')
+    .option('-d, --denom [simbol]', 'denomination of the transfer ("muon" default, "usd", ...)')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
+    .action(async (from, to, amount, options) => {
+        const { mnemonic } = db.get('addresses').find({ address: from }).value();
+        console.log('mnemonic =', mnemonic);
+        const privateKey = mnemonicToPrivateKey(mnemonic);
+        console.log('privateKey =', privateKey);
+        console.log(await transfer(privateKey.toString('hex'), from, to, amount, options.denom || 'umuon', options.network || 'gaia'));
+    });
+
+program.parse(process.argv);
