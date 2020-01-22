@@ -6,10 +6,12 @@ const path = require('path');
 const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 const CLIENT_DB_PATH = path.join(__dirname, 'client-db');
-const { getBalance, transfer } = require('../dist/src');
+const { CosmosThreshSigClient, getBalance, transfer } = require('../dist/src');
 const { Address, AccAddress} = require('../dist/src');
 
 const terra = require('@terra-money/core');
+
+const client = new CosmosThreshSigClient();
 
 function ensureDirSync(dirpath) {
     try {
@@ -40,6 +42,15 @@ db.defaults({ addresses: [] }).write();
 
 program
     .command('address')
+    .option('-i, --index <index>', 'Address index')
+    .action(async (options) => {
+        await client.init();
+        const address = client.getAddress(options.index);
+        console.log(address);
+    });
+
+program
+    .command('mnemonic_address')
     .action( () => {
         const mnemonic = terra.generateMnemonic();
         const address = mnemonicToAddress(mnemonic);
@@ -47,28 +58,6 @@ program
         db.get('addresses').push({ address, mnemonic }).write();
     });
 
-/**
- * response example:
- *
- * { balance:
-   [ { denom: 'uluna',
-       available: '10000000',
-       delegatedVesting: '0',
-       delegatable: '10000000',
-       freedVesting: '0',
-       unbonding: '0',
-       remainingVesting: '0' },
-     { denom: 'uusd',
-       available: '10000000',
-       delegatedVesting: '0',
-       delegatable: '0',
-       freedVesting: '0',
-       unbonding: '0',
-       remainingVesting: '0' } ],
-  vesting: [],
-  delegations: [],
-  unbondings: [] }
- */
 program
     .command('balance <address>')
     .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
@@ -86,6 +75,19 @@ program
         const privateKey = mnemonicToPrivateKey(mnemonic);
         console.log('privateKey =', privateKey);
         console.log(await transfer(privateKey.toString('hex'), from, to, amount, options.denom || 'umuon', options.network || 'gaia'));
+    });
+
+program
+    .command('transfer <from> <to> <amount>')
+    .option('-d, --denom [symbol]', 'denomination of the transfer ("luna" default, "usd", ...)')
+    .option('-fd, --feedenom [symbol]', 'denomination of the fee ("luna" default, "usd", ...)')
+    .option('-n, --network [name]', 'Name of network ("vodka" or "columbus_2")')
+    .option('-dr, --dry_run', 'Print the tx without posting it')
+    .option('-all, --all', 'Transfer all the coins of the specified currency')
+    .action(async (from, to, amount, options) => {
+        await client.init();
+        const sendOptions = {memo: options.memo, chainName: options.network, feeDenom: options.feedenom };
+        await client.transfer(from, to, amount, options.denom || 'luna', sendOptions, options.all, options.dry_run);
     });
 
 program.parse(process.argv);
