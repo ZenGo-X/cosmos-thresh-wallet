@@ -6,7 +6,7 @@ const path = require('path');
 const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 const CLIENT_DB_PATH = path.join(__dirname, 'client-db');
-const { CosmosThreshSigClient, getBalance, transfer } = require('../dist/src');
+const { CosmosThreshSigClient, getBalance, mnemonic_transfer } = require('../dist/src');
 const { Address, AccAddress} = require('../dist/src');
 
 const terra = require('@terra-money/core');
@@ -66,7 +66,7 @@ program
     });
 
 program
-    .command('transfer <from> <to> <amount>')
+    .command('mnemonic_transfer <from> <to> <amount>')
     .option('-d, --denom [simbol]', 'denomination of the transfer ("muon" default, "usd", ...)')
     .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
     .action(async (from, to, amount, options) => {
@@ -74,7 +74,7 @@ program
         console.log('mnemonic =', mnemonic);
         const privateKey = mnemonicToPrivateKey(mnemonic);
         console.log('privateKey =', privateKey);
-        console.log(await transfer(privateKey.toString('hex'), from, to, amount, options.denom || 'umuon', options.network || 'gaia'));
+        console.log(await mnemonic_transfer(privateKey.toString('hex'), from, to, amount, options.denom || 'umuon', options.network || 'gaia'));
     });
 
 program
