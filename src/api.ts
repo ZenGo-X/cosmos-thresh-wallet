@@ -1,7 +1,6 @@
 const rp = require("request-promise");
 const Chains = {
   columbus_2: "https://fcd.terra.dev",
-  // vodka: "https://vodka-fcd.terra.dev"
   gaia: "http://ec2-54-189-179-159.us-west-2.compute.amazonaws.com:1317"
 };
 
