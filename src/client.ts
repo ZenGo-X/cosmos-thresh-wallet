@@ -174,7 +174,83 @@ export class CosmosThreshSigClient {
     return p2MasterKeyShare;
   }
 
-  private async getMPCSigner(fromAddress: string) {
+  public async transfer(
+    from: string,
+    to: string,
+    amount: string,
+    denom: string,
+    options?: SendOptions,
+    sendAll?: boolean,
+    dryRun?: boolean,
+  ) {
+    console.log('from =', from);
+    console.log('to =', to);
+    console.log('amount =', amount);
+    console.log('denom =', denom);
+    console.log('options =', options);
+    const gas_estimate = await getEstimateGas(from, to, amount, denom, options);
+    console.log('gas_estimate =', gas_estimate);
+
+    const estimatedFeeAmount = calcFee(
+      times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
+    );
+    console.log('estimatedFeeAmount =', estimatedFeeAmount);
+    const feeAmount = times(estimatedFeeAmount || 0, 1);
+    // TODO: code denom for payed fees
+    const fee = { amount: feeAmount, denom: 'umuon' }; // denom here can be different than the transfer denomination
+    const gas = calcGas(fee.amount);
+
+    const chainName = (options && options.chainName) || 'gaia';
+    const base = await getBaseRequest(chainName, from);
+    const gasData = {
+      gas,
+      gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
+    };
+
+    const payload = { amount: [{ amount, denom }] };
+    const body = {
+      base_req: {
+        ...base,
+        memo: options && options.memo,
+        simulate: false,
+        //manual_gas
+        ...gasData,
+      },
+      ...payload,
+    };
+    // Send the base transaction again, now with the specified gas values
+    console.log('Posting', JSON.stringify(body));
+
+    const { value: tx } = await post(
+      chainName,
+      `/bank/accounts/${to}/transfers`,
+      body,
+    );
+
+    console.log('tx =', JSON.stringify(tx));
+
+    /* sign */
+    const signer = this.getMPCSigner(from);
+    const signedTx = await signTx(tx, signer, { ...base, type: 'send' });
+    console.log('type =', typeof signedTx);
+    console.log('signedTx =', signedTx);
+    const data = {
+      tx: JSON.parse(signedTx),
+      mode: 'sync',
+    };
+    console.log('actual_data =', data);
+
+    if (dryRun) {
+      console.log('------ Dry Run ----- ');
+      console.log(JSON.stringify(data));
+    } else {
+      console.log(' ===== Executing ===== ');
+      const res = await post(chainName, `/txs`, data);
+      console.log('Send Res', res);
+    }
+  }
+
+  private getMPCSigner(fromAddress: string) {
     return async (signMessage: string) => {
       const addressObj: any = this.db
         .get('addresses')
@@ -247,12 +323,6 @@ export async function mnemonic_transfer(
     gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
   };
 
-  // let manual_gas = {
-  //   amount: [{ denom: "umuon", amount: "3000" }],
-  //   gas: "200005"
-  // };
-  // console.log("Manual Gas", manual_gas);
-
   const payload = { amount: [{ amount, denom }] };
   const body = {
     base_req: {
@@ -264,7 +334,7 @@ export async function mnemonic_transfer(
     },
     ...payload,
   };
-  // This is another simulation?
+  // Send the base transaction again, now with the specified gas values
   console.log('Posting', JSON.stringify(body));
 
   const { value: tx } = await post(
@@ -273,8 +343,6 @@ export async function mnemonic_transfer(
     body,
   );
 
-  // Manual fee
-  //tx.fee = { amount: [{ denom: "umuon", amount: "870" }], gas: "58333" };
   console.log('tx =', JSON.stringify(tx));
 
   /* sign */
@@ -304,6 +372,7 @@ async function getEstimateGas(
 ): Promise<string> {
   const memo = options && options.memo;
   const chainName = (options && options.chainName) || 'gaia';
+  console.log('From=', from);
 
   const base = await getBaseRequest(chainName, from);
   console.log('base =', base);
