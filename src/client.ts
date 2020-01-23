@@ -111,10 +111,8 @@ export class CosmosThreshSigClient {
   }
 
   public async init() {
-    async () => {
-      this.initDb();
-      await this.initMasterKey();
-    };
+    this.initDb();
+    return this.initMasterKey();
   }
 
   private initDb() {
