@@ -10,11 +10,10 @@ import { GAS_PRICE, calcFee, calcGas } from './calcFee';
 import { times } from './math';
 import getSigner from './cosmos/signer';
 import signTx from './cosmos/api/signTx';
-import { DEFULT_GAS_PRICE, DEFAULT_GAS_COEFFICIENT, Denom } from './constants';
+import { DEFAULT_GAS_COEFFICIENT, Denom } from './constants';
 import * as CryptoJS from 'crypto-js';
 import { AccAddress } from './address/acc-address';
 
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import low from 'lowdb';
@@ -48,6 +47,16 @@ interface VestingAccount {
 interface AccountValue {
   account_number: string;
   sequence: string;
+}
+
+interface Balance {
+  height: string;
+  result: [Coin];
+}
+
+export interface Coin {
+  denom: string;
+  amount: string;
 }
 
 export async function getBalance(
@@ -86,25 +95,33 @@ type SendOptions = {
   feeDenom?: string;
 };
 
+type BroadcastType = 'async' | 'sync' | 'block';
+
 export class CosmosThreshSigClient {
   private mainnet: boolean;
   private p2: Party2;
   private p2MasterKeyShare: Party2Share;
   private db: any;
+  private broadcastType: BroadcastType;
 
-  constructor(mainnet = false, useAsyncBroadcast = false) {
+  constructor(mainnet = false, broadcastType: BroadcastType = 'block') {
     this.mainnet = mainnet;
-    const httpUrl = mainnet;
     this.p2 = new Party2(P1_ENDPOINT);
+    this.broadcastType = broadcastType;
   }
 
   public async init() {
-    return Promise.all([
-      (async () => {
-        this.initDb();
-        await this.initMasterKey();
-      })(),
-    ]);
+    async () => {
+      this.initDb();
+      await this.initMasterKey();
+    };
+  }
+
+  private initDb() {
+    ensureDirSync(CLIENT_DB_PATH);
+    const adapter = new FileSync(`${CLIENT_DB_PATH}/db.json`);
+    this.db = low(adapter);
+    this.db.defaults({ mkShare: null, addresses: [] }).write();
   }
 
   /**
@@ -127,13 +144,6 @@ export class CosmosThreshSigClient {
         .write();
     }
     return address;
-  }
-
-  private initDb() {
-    ensureDirSync(CLIENT_DB_PATH);
-    const adapter = new FileSync(`${CLIENT_DB_PATH}/db.json`);
-    this.db = low(adapter);
-    this.db.defaults({ mkShare: null, addresses: [] }).write();
   }
 
   /**
@@ -178,7 +188,7 @@ export class CosmosThreshSigClient {
     from: string,
     to: string,
     amount: string,
-    denom: string,
+    denom: Denom,
     options?: SendOptions,
     sendAll?: boolean,
     dryRun?: boolean,
@@ -188,6 +198,15 @@ export class CosmosThreshSigClient {
     console.log('amount =', amount);
     console.log('denom =', denom);
     console.log('options =', options);
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+
+    if (sendAll) {
+      const balance = await getBalance(from, chainName);
+      console.log('balance=', balance);
+      amount = getAmountOfDenom(balance, denom);
+      console.log('Balance of', denom, 'is', amount);
+    }
+
     const gas_estimate = await getEstimateGas(from, to, amount, denom, options);
     console.log('gas_estimate =', gas_estimate);
 
@@ -197,10 +216,9 @@ export class CosmosThreshSigClient {
     console.log('estimatedFeeAmount =', estimatedFeeAmount);
     const feeAmount = times(estimatedFeeAmount || 0, 1);
     // TODO: code denom for payed fees
-    const fee = { amount: feeAmount, denom: 'umuon' }; // denom here can be different than the transfer denomination
+    const fee = { amount: feeAmount, denom: 'umuon' };
     const gas = calcGas(fee.amount);
 
-    const chainName = (options && options.chainName) || 'gaia';
     const base = await getBaseRequest(chainName, from);
     const gasData = {
       gas,
@@ -236,7 +254,7 @@ export class CosmosThreshSigClient {
     console.log('signedTx =', signedTx);
     const data = {
       tx: JSON.parse(signedTx),
-      mode: 'sync',
+      mode: 'block',
     };
     console.log('actual_data =', data);
 
@@ -291,7 +309,7 @@ export class CosmosThreshSigClient {
   }
 }
 
-export async function mnemonic_transfer(
+export async function mnemonicTransfer(
   privateKeyHex: string,
   from: string,
   to: string,
@@ -352,7 +370,7 @@ export async function mnemonic_transfer(
   console.log('signedTx =', signedTx);
   const data = {
     tx: JSON.parse(signedTx),
-    mode: 'sync',
+    mode: 'block',
   };
   console.log('actual_data =', data);
 
@@ -396,6 +414,11 @@ async function getEstimateGas(
     body,
   );
   return gas_estimate;
+}
+
+function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {
+  const value = balanceResult.result.find((res) => res.denom === denom);
+  return value ? value.amount : '';
 }
 
 function ensureDirSync(dirpath: string) {
