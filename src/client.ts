@@ -205,12 +205,25 @@ export class CosmosThreshSigClient {
       console.log('Balance of', denom, 'is', amount);
     }
 
-    const gas_estimate = await getEstimateGas(from, to, amount, denom, options);
+    // We estimate gas with a fake fee of 1, so we pass our amount - 1
+    // to get correct estimation even when sending all
+    const gas_estimate = await getEstimateGas(
+      from,
+      to,
+      (parseInt(amount) - 1).toString(),
+      denom,
+      options,
+    );
     console.log('gas_estimate =', gas_estimate);
 
     const estimatedFeeAmount = calcFee(
       times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
     );
+
+    if (sendAll) {
+      amount = (parseInt(amount) - parseInt(estimatedFeeAmount)).toString();
+    }
+
     console.log('estimatedFeeAmount =', estimatedFeeAmount);
     const feeAmount = times(estimatedFeeAmount || 0, 1);
     // TODO: code denom for payed fees
