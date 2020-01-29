@@ -60,25 +60,25 @@ program
 
 program
     .command('balance <address>')
-    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "cosmoshub_3")')
     .action(async (address, options) => {
         console.log(await getBalance(address, options.network || 'gaia'));
     });
 
 program
     .command('tx <txhash>')
-    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "cosmoshub_3")')
     .action(async (txhash, options) => {
         console.log(await getTxInfo(txhash, options.network || 'gaia'));
     });
 
 program
     .command('transactions')
-    .option('-a --action <action>', 'transaction side, Allowed values: [send, receive]')
     .option('-s --sender <sender>', 'Sender address')
+    .option('-r --receiver <receiver>', 'Sender address')
     .option('-p --page <page>', 'Page number')
     .option('-l --limit <limit>', 'Page limit')
-    .option('-n, --network [name]', 'Name of network ("vodka" or "columbus_2")')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "cosmoshub_3")')
     .action(async (options) => {
         const txs = await getTransactions(options);
         console.log(JSON.stringify(txs, null, 2));
@@ -86,7 +86,7 @@ program
 program
     .command('mnemonic_transfer <from> <to> <amount>')
     .option('-d, --denom [simbol]', 'denomination of the transfer ("muon" default, "usd", ...)')
-    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
+    .option('-n, --network [name]', 'Name of network ("gaia" or "cosmoshub_3")')
     .action(async (from, to, amount, options) => {
         const { mnemonic } = db.get('addresses').find({ address: from }).value();
         console.log('mnemonic =', mnemonic);
