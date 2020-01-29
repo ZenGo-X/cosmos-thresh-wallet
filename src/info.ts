@@ -8,8 +8,8 @@ export async function getTxInfo(
 }
 
 interface GetTransactionsOptions {
-  action?: string;
   sender?: string;
+  receiver?: string;
   page?: string;
   limit?: string;
   network?: ChainName;
@@ -17,12 +17,13 @@ interface GetTransactionsOptions {
 
 export async function getTransactions(options: GetTransactionsOptions = {}) {
   const chainName = (options && options.network) || 'gaia';
-  return get(
-    chainName,
+  const query =
     `/txs?` +
-      (options.action ? `&message.action=${options.action}` : '') +
-      (options.sender ? `&message.sender=${options.sender}` : '') +
-      (options.page ? `&page=${options.page}` : '') +
-      (options.limit ? `&limit=${options.limit}` : ''),
-  );
+    '&message.action=send' +
+    (options.sender ? `&message.sender=${options.sender}` : '') +
+    (options.receiver ? `&transfer.recipient=${options.receiver}` : '') +
+    (options.page ? `&page=${options.page}` : '') +
+    (options.limit ? `&limit=${options.limit}` : '');
+  console.log(query);
+  return get(chainName, query);
 }
