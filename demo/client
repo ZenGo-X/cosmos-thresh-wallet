@@ -83,6 +83,7 @@ program
         const txs = await getTransactions(options);
         console.log(JSON.stringify(txs, null, 2));
     });
+
 program
     .command('mnemonic_transfer <from> <to> <amount>')
     .option('-d, --denom [simbol]', 'denomination of the transfer ("muon" default, "usd", ...)')
@@ -97,15 +98,15 @@ program
 
 program
     .command('transfer <from> <to> <amount>')
-    .option('-d, --denom [symbol]', 'denomination of the transfer ("luna" default, "usd", ...)')
-    .option('-fd, --feedenom [symbol]', 'denomination of the fee ("luna" default, "usd", ...)')
+    .option('-d, --denom [symbol]', 'denomination of the transfer ("umuon" default, "atom", ...)')
+    .option('-fd, --feedenom [symbol]', 'denomination of the fee ("umuon" default, "atom", ...)')
     .option('-n, --network [name]', 'Name of network ("gaia" or "mainnet")')
     .option('-dr, --dry_run', 'Print the tx without posting it')
     .option('-all, --all', 'Transfer all the coins of the specified currency')
     .action(async (from, to, amount, options) => {
         await client.init();
         const sendOptions = {memo: options.memo, chainName: options.network, feeDenom: options.feedenom };
-        await client.transfer(from, to, amount, options.denom || 'luna', sendOptions, options.all, options.dry_run);
+        await client.transfer(from, to, amount, options.denom || 'umuon', sendOptions, options.all, options.dry_run);
     });
 
 program.parse(process.argv);

@@ -314,6 +314,7 @@ export class CosmosThreshSigClient {
       console.log(' ===== Executing ===== ');
       const res = await post(chainName, `/txs`, data);
       console.log('Send Res', res);
+      return res;
     }
   }
 
@@ -389,6 +390,8 @@ async function getEstimateGas(
   const { gas_estimate } = returnValue;
   return gas_estimate;
 }
+
+async function simulate(request: any, endpoint: string): Promise<string> {}
 
 function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {
   const value = balanceResult.result.find((res) => res.denom === denom);
