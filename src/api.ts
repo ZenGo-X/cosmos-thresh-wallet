@@ -20,6 +20,8 @@ export async function post(
   route: string,
   body: any,
 ): Promise<any> {
+  // console.log(`${Chains[chainName]}${route}`);
+  // console.log(JSON.stringify(body));
   return rp({
     method: 'POST',
     uri: `${Chains[chainName]}${route}`,
