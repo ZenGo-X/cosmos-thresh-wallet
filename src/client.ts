@@ -59,6 +59,19 @@ export interface Coin {
   amount: string;
 }
 
+function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {
+  const value = balanceResult.result.find((res) => res.denom === denom);
+  return value ? value.amount : '';
+}
+
+function ensureDirSync(dirpath: string) {
+  try {
+    fs.mkdirSync(dirpath, { recursive: true });
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+}
+
 export async function getBalance(
   address: string,
   chainName: ChainName,
@@ -183,7 +196,7 @@ export class CosmosThreshSigClient {
   }
 
   // Generate a transaction to send from the parameters
-  async generateTransaction(
+  async generateTransferTransaction(
     from: string,
     to: string,
     amount: string,
@@ -199,17 +212,22 @@ export class CosmosThreshSigClient {
       amount = getAmountOfDenom(balance, denom);
       console.log('Balance of', denom, 'is', amount);
     }
+    const memo = (options && options.memo) || '';
+
+    const payload = { amount: [{ amount, denom }] };
+
+    const endpoint = `/bank/accounts/${to}/transfers`;
 
     // We estimate gas with a fake fee of 1, so we pass our amount - 1
     // to get correct estimation even when sending all
-    const gas_estimate = await getEstimateGas(
-      from,
-      to,
-      (parseInt(amount) - 1).toString(),
-      denom,
+    const gas_estimate = await simulateTransaction(
       accountInfo,
-      options,
+      endpoint,
+      payload,
+      memo,
+      chainName,
     );
+
     console.log('gas_estimate =', gas_estimate);
 
     const estimatedFeeAmount = calcFee(
@@ -231,13 +249,11 @@ export class CosmosThreshSigClient {
       gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
     };
 
-    const payload = { amount: [{ amount, denom }] };
     const body = {
       base_req: {
         ...accountInfo,
         memo: options && options.memo,
         simulate: false,
-        //manual_gas
         ...gasData,
       },
       ...payload,
@@ -245,14 +261,134 @@ export class CosmosThreshSigClient {
     // Send the base transaction again, now with the specified gas values
     console.log('Posting', JSON.stringify(body));
 
-    const { value: tx } = await post(
-      chainName,
-      `/bank/accounts/${to}/transfers`,
-      body,
-    );
+    const { value: tx } = await post(chainName, endpoint, body);
 
     console.log('tx =', JSON.stringify(tx));
     return tx;
+  }
+
+  // Generate a delegation transaction
+  async generateDelegateTransaction(
+    from: string,
+    to: string,
+    amount: string,
+    denom: Denom,
+    chainName: ChainName,
+    accountInfo: any,
+    options?: SendOptions,
+    sendAll?: boolean,
+  ) {
+    const memo = (options && options.memo) || '';
+
+    const payload = {
+      delegator_address: from,
+      validator_address: to,
+      amount: { amount, denom },
+    };
+
+    const endpoint = `/staking/delegators/${from}/delegations`;
+
+    // We estimate gas with a fake fee of 1, so we pass our amount - 1
+    // to get correct estimation even when sending all
+    const gas_estimate = await simulateTransaction(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+    );
+
+    console.log('gas_estimate =', gas_estimate);
+
+    const estimatedFeeAmount = calcFee(
+      times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
+    );
+
+    console.log('estimatedFeeAmount =', estimatedFeeAmount);
+    const feeAmount = times(estimatedFeeAmount || 0, 1);
+    // TODO: code denom for payed fees
+    const fee = { amount: feeAmount, denom: 'umuon' };
+    const gas = calcGas(fee.amount);
+
+    const gasData = {
+      gas,
+      gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
+    };
+
+    const body = {
+      base_req: {
+        ...accountInfo,
+        memo: options && options.memo,
+        simulate: false,
+        ...gasData,
+      },
+      ...payload,
+    };
+    // Send the base transaction again, now with the specified gas values
+    console.log('Posting', JSON.stringify(body));
+
+    const { value: tx } = await post(chainName, endpoint, body);
+
+    console.log('tx =', JSON.stringify(tx));
+    return tx;
+  }
+
+  public async delegate(
+    from: string,
+    to: string,
+    amount: string,
+    denom: Denom,
+    options?: SendOptions,
+    sendAll?: boolean,
+    dryRun?: boolean,
+  ) {
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+    /* Step 1: Generate the transaction from the paprameters */
+    const accountInfo = await getAccountInfo(chainName, from);
+
+    const rawTx = await this.generateDelegateTransaction(
+      from,
+      to,
+      amount,
+      denom,
+      chainName,
+      accountInfo,
+      options,
+      sendAll,
+    );
+
+    /* Step 2: Extract the TX hash of the transaction */
+    const txHash = createTxHash(rawTx, {
+      ...accountInfo,
+      type: 'send',
+    });
+
+    console.log('txHash=', txHash);
+
+    /* sign */
+    const signer = this.getMPCSigner(from);
+
+    const { signature, publicKey } = await signTxHash(txHash, signer);
+
+    const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
+
+    console.log('type =', typeof signedTx);
+    console.log('signedTx =', signedTx);
+    const data = {
+      tx: signedTx,
+      mode: 'block',
+    };
+    console.log('actual_data =', data);
+
+    if (dryRun) {
+      console.log('------ Dry Run ----- ');
+      console.log(JSON.stringify(data));
+    } else {
+      console.log(' ===== Executing ===== ');
+      const res = await post(chainName, `/txs`, data);
+      console.log('Send Res', res);
+      return res;
+    }
   }
 
   public async transfer(
@@ -264,16 +400,11 @@ export class CosmosThreshSigClient {
     sendAll?: boolean,
     dryRun?: boolean,
   ) {
-    console.log('from =', from);
-    console.log('to =', to);
-    console.log('amount =', amount);
-    console.log('denom =', denom);
-    console.log('options =', options);
     const chainName: ChainName = (options && options.chainName) || 'gaia';
     /* Step 1: Generate the transaction from the paprameters */
     const accountInfo = await getAccountInfo(chainName, from);
 
-    const rawTx = await this.generateTransaction(
+    const rawTx = await this.generateTransferTransaction(
       from,
       to,
       amount,
@@ -351,57 +482,25 @@ export class CosmosThreshSigClient {
   }
 }
 
-/**
- * @return estimated gas
- */
-async function getEstimateGas(
-  from: string,
-  to: string,
-  amount: string,
-  denom: string,
+async function simulateTransaction(
   accountInfo: any,
-  options?: SendOptions,
+  endpoint: string,
+  payload: any,
+  memo: string,
+  chainName: ChainName,
 ): Promise<string> {
-  const memo = options && options.memo;
-  const chainName = (options && options.chainName) || 'gaia';
-  console.log('From=', from);
-
-  console.log('accountInfo =', accountInfo);
-  const payload = { amount: [{ amount, denom }] };
-  console.log('payload =', payload);
-
-  const simulationFees = { amount: '1', denom }; // denom can be a different fee denom (any available asset)
+  const simulationFees = { amount: '1', denom: 'umuon' };
   const gasData = { gas: 'auto', fees: [simulationFees] };
 
-  // 1. simulate for gas estimation
   const base_req = { ...accountInfo, memo, simulate: true, ...gasData };
-  console.log('base_req =', base_req);
+  console.log('simulate base_req =', base_req);
   const body = {
     base_req,
     ...payload,
   };
-  console.log('body(simulate) =', body);
-  const returnValue = await post(
-    chainName,
-    `/bank/accounts/${to}/transfers`,
-    body,
-  );
+  console.log('simlate body', body);
+  const returnValue = await post(chainName, endpoint, body);
   console.log('returnValue=', returnValue);
   const { gas_estimate } = returnValue;
   return gas_estimate;
-}
-
-async function simulate(request: any, endpoint: string): Promise<string> {}
-
-function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {
-  const value = balanceResult.result.find((res) => res.denom === denom);
-  return value ? value.amount : '';
-}
-
-function ensureDirSync(dirpath: string) {
-  try {
-    fs.mkdirSync(dirpath, { recursive: true });
-  } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
-  }
 }
