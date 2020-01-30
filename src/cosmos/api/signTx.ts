@@ -10,14 +10,17 @@ export const createTxHash = (tx: any, request: any) => {
   const signMessageString =
     typeof signMessage === 'string' ? signMessage : JSON.stringify(signMessage);
 
+  console.log('signMessageString', signMessageString);
+
   const signHashBuffer = Buffer.from(
     CryptoJS.SHA256(signMessageString).toString(),
     `hex`,
   );
+  console.log('signHashBuffer', signHashBuffer);
   return signHashBuffer;
 };
 
-export const signTxHash = async (txHash: string, signer: any) => {
+export const signTxHash = async (txHash: Buffer, signer: any) => {
   let signature, publicKey;
   try {
     ({ signature, publicKey } = await signer(txHash));
