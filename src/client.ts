@@ -290,32 +290,31 @@ export class CosmosThreshSigClient {
       type: 'send',
     });
 
-    console.log('txHash=' + txHash);
+    console.log('txHash=', txHash);
 
     /* sign */
     const signer = this.getMPCSigner(from);
 
-    // const signedTx = await signTx(rawTx, signer);
-    const { signature, publicKey } = await signTxHash(rawTx, signer);
+    const { signature, publicKey } = await signTxHash(txHash, signer);
 
-    // const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
+    const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
 
-    // console.log('type =', typeof signedTx);
-    // console.log('signedTx =', signedTx);
-    // const data = {
-    //   tx: JSON.parse(signedTx),
-    //   mode: 'block',
-    // };
-    // console.log('actual_data =', data);
+    console.log('type =', typeof signedTx);
+    console.log('signedTx =', signedTx);
+    const data = {
+      tx: signedTx,
+      mode: 'block',
+    };
+    console.log('actual_data =', data);
 
-    // if (dryRun) {
-    //   console.log('------ Dry Run ----- ');
-    //   console.log(JSON.stringify(data));
-    // } else {
-    //   console.log(' ===== Executing ===== ');
-    //   const res = await post(chainName, `/txs`, data);
-    //   console.log('Send Res', res);
-    // }
+    if (dryRun) {
+      console.log('------ Dry Run ----- ');
+      console.log(JSON.stringify(data));
+    } else {
+      console.log(' ===== Executing ===== ');
+      const res = await post(chainName, `/txs`, data);
+      console.log('Send Res', res);
+    }
   }
 
   private getMPCSigner(fromAddress: string) {
@@ -339,13 +338,13 @@ export class CosmosThreshSigClient {
         addressIndex,
       );
       console.log('MPCSignatreu', MPCSignature);
-      // const signature = signatureMPC.toBuffer();
-      // console.log('sigBuffer=', signature);
+      const signature = signatureMPC.toBuffer();
+      console.log('sigBuffer=', signature);
 
-      // const publicKeyBasePoint = this.getPublicKey(addressIndex);
-      // const publicKeyHex = publicKeyBasePoint.encode('hex', true);
-      // const publicKey = Buffer.from(publicKeyHex, 'hex');
-      // console.log('publicKeyBuffer =', publicKey);
+      const publicKeyBasePoint = this.getPublicKey(addressIndex);
+      const publicKeyHex = publicKeyBasePoint.encode('hex', true);
+      const publicKey = Buffer.from(publicKeyHex, 'hex');
+      console.log('publicKeyBuffer =', publicKey);
       return { signature, publicKey };
     };
   }
