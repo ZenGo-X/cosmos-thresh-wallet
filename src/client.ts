@@ -9,7 +9,7 @@ import { get, post, ChainName } from './api';
 import { GAS_PRICE, calcFee, calcGas } from './calcFee';
 import { times } from './math';
 import getSigner from './cosmos/signer';
-import signTx from './cosmos/api/signTx';
+import { createTxHash, signTxHash, injectSignatrue } from './cosmos/api/signTx';
 import { DEFAULT_GAS_COEFFICIENT, Denom } from './constants';
 import * as CryptoJS from 'crypto-js';
 import { AccAddress } from './address/acc-address';
@@ -72,7 +72,7 @@ function getValue(account: StandardAccount | VestingAccount): AccountValue {
     : account.result.value.BaseVestingAccount.BaseAccount;
 }
 
-async function getBaseRequest(
+async function getAccountInfo(
   chainName: ChainName,
   from: string,
 ): Promise<object> {
@@ -182,22 +182,17 @@ export class CosmosThreshSigClient {
     return p2MasterKeyShare;
   }
 
-  public async transfer(
+  // Generate a transaction to send from the parameters
+  async generateTransaction(
     from: string,
     to: string,
     amount: string,
     denom: Denom,
+    chainName: ChainName,
+    accountInfo: any,
     options?: SendOptions,
     sendAll?: boolean,
-    dryRun?: boolean,
   ) {
-    console.log('from =', from);
-    console.log('to =', to);
-    console.log('amount =', amount);
-    console.log('denom =', denom);
-    console.log('options =', options);
-    const chainName: ChainName = (options && options.chainName) || 'gaia';
-
     if (sendAll) {
       const balance = await getBalance(from, chainName);
       console.log('balance=', balance);
@@ -212,6 +207,7 @@ export class CosmosThreshSigClient {
       to,
       (parseInt(amount) - 1).toString(),
       denom,
+      accountInfo,
       options,
     );
     console.log('gas_estimate =', gas_estimate);
@@ -230,7 +226,6 @@ export class CosmosThreshSigClient {
     const fee = { amount: feeAmount, denom: 'umuon' };
     const gas = calcGas(fee.amount);
 
-    const base = await getBaseRequest(chainName, from);
     const gasData = {
       gas,
       gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
@@ -239,7 +234,7 @@ export class CosmosThreshSigClient {
     const payload = { amount: [{ amount, denom }] };
     const body = {
       base_req: {
-        ...base,
+        ...accountInfo,
         memo: options && options.memo,
         simulate: false,
         //manual_gas
@@ -257,30 +252,74 @@ export class CosmosThreshSigClient {
     );
 
     console.log('tx =', JSON.stringify(tx));
+    return tx;
+  }
+
+  public async transfer(
+    from: string,
+    to: string,
+    amount: string,
+    denom: Denom,
+    options?: SendOptions,
+    sendAll?: boolean,
+    dryRun?: boolean,
+  ) {
+    console.log('from =', from);
+    console.log('to =', to);
+    console.log('amount =', amount);
+    console.log('denom =', denom);
+    console.log('options =', options);
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+    /* Step 1: Generate the transaction from the paprameters */
+    const accountInfo = await getAccountInfo(chainName, from);
+
+    const rawTx = await this.generateTransaction(
+      from,
+      to,
+      amount,
+      denom,
+      chainName,
+      accountInfo,
+      options,
+      sendAll,
+    );
+
+    /* Step 2: Extract the TX hash of the transaction */
+    const txHash = createTxHash(rawTx, {
+      ...accountInfo,
+      type: 'send',
+    });
+
+    console.log('txHash=' + txHash);
 
     /* sign */
     const signer = this.getMPCSigner(from);
-    const signedTx = await signTx(tx, signer, { ...base, type: 'send' });
-    console.log('type =', typeof signedTx);
-    console.log('signedTx =', signedTx);
-    const data = {
-      tx: JSON.parse(signedTx),
-      mode: 'block',
-    };
-    console.log('actual_data =', data);
 
-    if (dryRun) {
-      console.log('------ Dry Run ----- ');
-      console.log(JSON.stringify(data));
-    } else {
-      console.log(' ===== Executing ===== ');
-      const res = await post(chainName, `/txs`, data);
-      console.log('Send Res', res);
-    }
+    // const signedTx = await signTx(rawTx, signer);
+    const { signature, publicKey } = await signTxHash(rawTx, signer);
+
+    // const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
+
+    // console.log('type =', typeof signedTx);
+    // console.log('signedTx =', signedTx);
+    // const data = {
+    //   tx: JSON.parse(signedTx),
+    //   mode: 'block',
+    // };
+    // console.log('actual_data =', data);
+
+    // if (dryRun) {
+    //   console.log('------ Dry Run ----- ');
+    //   console.log(JSON.stringify(data));
+    // } else {
+    //   console.log(' ===== Executing ===== ');
+    //   const res = await post(chainName, `/txs`, data);
+    //   console.log('Send Res', res);
+    // }
   }
 
   private getMPCSigner(fromAddress: string) {
-    return async (signMessage: string) => {
+    return async (signHash: Buffer) => {
       const addressObj: any = this.db
         .get('addresses')
         .find({ address: fromAddress })
@@ -291,16 +330,7 @@ export class CosmosThreshSigClient {
         HD_COIN_INDEX,
         addressIndex,
       );
-
-      const signMessageString =
-        typeof signMessage === 'string'
-          ? signMessage
-          : JSON.stringify(signMessage);
-
-      const signHash = Buffer.from(
-        CryptoJS.SHA256(signMessageString).toString(),
-        `hex`,
-      );
+      console.log('addressObj=', addressObj);
 
       const signatureMPC: MPCSignature = await this.p2.sign(
         signHash,
@@ -308,85 +338,17 @@ export class CosmosThreshSigClient {
         HD_COIN_INDEX,
         addressIndex,
       );
-      const signature = signatureMPC.toBuffer();
-      console.log('sigBuffer=', signature);
+      console.log('MPCSignatreu', MPCSignature);
+      // const signature = signatureMPC.toBuffer();
+      // console.log('sigBuffer=', signature);
 
-      const publicKeyBasePoint = this.getPublicKey(addressIndex);
-      const publicKeyHex = publicKeyBasePoint.encode('hex', true);
-      const publicKey = Buffer.from(publicKeyHex, 'hex');
-      console.log('publicKeyBuffer =', publicKey);
+      // const publicKeyBasePoint = this.getPublicKey(addressIndex);
+      // const publicKeyHex = publicKeyBasePoint.encode('hex', true);
+      // const publicKey = Buffer.from(publicKeyHex, 'hex');
+      // console.log('publicKeyBuffer =', publicKey);
       return { signature, publicKey };
     };
   }
-}
-
-export async function mnemonicTransfer(
-  privateKeyHex: string,
-  from: string,
-  to: string,
-  amount: string,
-  denom: string,
-  options?: SendOptions,
-) {
-  console.log('from =', from);
-  console.log('to =', to);
-  console.log('amount =', amount);
-  console.log('denom =', denom);
-  console.log('options =', options);
-  const gas_estimate = await getEstimateGas(from, to, amount, denom, options);
-  console.log('gas_estimate =', gas_estimate);
-
-  const estimatedFeeAmount = calcFee(
-    times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
-  );
-  console.log('estimatedFeeAmount =', estimatedFeeAmount);
-  const feeAmount = times(estimatedFeeAmount || 0, 1);
-  // TODO: code denom for payed fees
-  const fee = { amount: feeAmount, denom: 'umuon' }; // denom here can be different than the transfer denomination
-  const gas = calcGas(fee.amount);
-
-  const chainName = (options && options.chainName) || 'gaia';
-  const base = await getBaseRequest(chainName, from);
-  const gasData = {
-    gas,
-    gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
-  };
-
-  const payload = { amount: [{ amount, denom }] };
-  const body = {
-    base_req: {
-      ...base,
-      memo: options && options.memo,
-      simulate: false,
-      //manual_gas
-      ...gasData,
-    },
-    ...payload,
-  };
-  // Send the base transaction again, now with the specified gas values
-  console.log('Posting', JSON.stringify(body));
-
-  const { value: tx } = await post(
-    chainName,
-    `/bank/accounts/${to}/transfers`,
-    body,
-  );
-
-  console.log('tx =', JSON.stringify(tx));
-
-  /* sign */
-  const signer = await getSigner(privateKeyHex);
-  const signedTx = await signTx(tx, signer, { ...base, type: 'send' });
-  console.log('type =', typeof signedTx);
-  console.log('signedTx =', signedTx);
-  const data = {
-    tx: JSON.parse(signedTx),
-    mode: 'block',
-  };
-  console.log('actual_data =', data);
-
-  const res = await post(chainName, `/txs`, data);
-  console.log('Send Res', res);
 }
 
 /**
@@ -397,14 +359,14 @@ async function getEstimateGas(
   to: string,
   amount: string,
   denom: string,
+  accountInfo: any,
   options?: SendOptions,
 ): Promise<string> {
   const memo = options && options.memo;
   const chainName = (options && options.chainName) || 'gaia';
   console.log('From=', from);
 
-  const base = await getBaseRequest(chainName, from);
-  console.log('base =', base);
+  console.log('accountInfo =', accountInfo);
   const payload = { amount: [{ amount, denom }] };
   console.log('payload =', payload);
 
@@ -412,18 +374,20 @@ async function getEstimateGas(
   const gasData = { gas: 'auto', fees: [simulationFees] };
 
   // 1. simulate for gas estimation
-  const base_req = { ...base, memo, simulate: true, ...gasData };
+  const base_req = { ...accountInfo, memo, simulate: true, ...gasData };
   console.log('base_req =', base_req);
   const body = {
     base_req,
     ...payload,
   };
-  console.log('body =', body);
-  const { gas_estimate } = await post(
+  console.log('body(simulate) =', body);
+  const returnValue = await post(
     chainName,
     `/bank/accounts/${to}/transfers`,
     body,
   );
+  console.log('returnValue=', returnValue);
+  const { gas_estimate } = returnValue;
   return gas_estimate;
 }
 

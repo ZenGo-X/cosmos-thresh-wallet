@@ -7,7 +7,7 @@ const Chains = {
 export type ChainName = 'gaia' | 'cosmoshub_3';
 
 export async function get(chainName: ChainName, route: string): Promise<any> {
-  console.log(`${Chains[chainName]}${route}`);
+  // console.log(`${Chains[chainName]}${route}`);
   return rp({
     method: 'GET',
     uri: `${Chains[chainName]}${route}`,
