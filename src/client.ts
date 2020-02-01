@@ -156,7 +156,6 @@ export class CosmosThreshSigClient {
     }
     return address;
   }
-
   /**
    * Initialize the client's master key.
    * Will either generate a new one by the 2 party protocol, or restore one from previous session.
@@ -357,38 +356,7 @@ export class CosmosThreshSigClient {
       sendAll,
     );
 
-    /* Step 2: Extract the TX hash of the transaction */
-    const txHash = createTxHash(rawTx, {
-      ...accountInfo,
-      type: 'send',
-    });
-
-    console.log('txHash=', txHash);
-
-    /* sign */
-    const signer = this.getMPCSigner(from);
-
-    const { signature, publicKey } = await signTxHash(txHash, signer);
-
-    const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
-
-    console.log('type =', typeof signedTx);
-    console.log('signedTx =', signedTx);
-    const data = {
-      tx: signedTx,
-      mode: 'block',
-    };
-    console.log('actual_data =', data);
-
-    if (dryRun) {
-      console.log('------ Dry Run ----- ');
-      console.log(JSON.stringify(data));
-    } else {
-      console.log(' ===== Executing ===== ');
-      const res = await post(chainName, `/txs`, data);
-      console.log('Send Res', res);
-      return res;
-    }
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx);
   }
 
   public async transfer(
@@ -415,6 +383,15 @@ export class CosmosThreshSigClient {
       sendAll,
     );
 
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx);
+  }
+
+  private async signAndBroadcast(
+    from: string,
+    accountInfo: any,
+    chainName: ChainName,
+    rawTx: any,
+  ) {
     /* Step 2: Extract the TX hash of the transaction */
     const txHash = createTxHash(rawTx, {
       ...accountInfo,
