@@ -85,10 +85,17 @@ function getValue(account: StandardAccount | VestingAccount): AccountValue {
     : account.result.value.BaseVestingAccount.BaseAccount;
 }
 
+interface AccountInfo {
+  from: string;
+  chain_id: string;
+  account_number: string;
+  sequence: string;
+}
+
 async function getAccountInfo(
   chainName: ChainName,
   from: string,
-): Promise<object> {
+): Promise<AccountInfo> {
   /* latest */
   const latest = await get(chainName, '/blocks/latest');
   const { chain_id } = latest.block.header;
@@ -194,130 +201,18 @@ export class CosmosThreshSigClient {
     return p2MasterKeyShare;
   }
 
-  // Generate a transaction to send from the parameters
-  async generateTransferTransaction(
-    from: string,
-    to: string,
-    amount: string,
-    denom: Denom,
+  async generateTx(
+    accountInfo: AccountInfo,
+    endpoint: string,
+    payload: any,
+    memo: string,
     chainName: ChainName,
-    accountInfo: any,
-    options?: SendOptions,
-    sendAll?: boolean,
-  ) {
-    if (sendAll) {
-      const balance = await getBalance(from, chainName);
-      console.log('balance=', balance);
-      amount = getAmountOfDenom(balance, denom);
-      console.log('Balance of', denom, 'is', amount);
-    }
-    const memo = (options && options.memo) || '';
-
-    const payload = { amount: [{ amount, denom }] };
-
-    const endpoint = `/bank/accounts/${to}/transfers`;
-
-    // We estimate gas with a fake fee of 1, so we pass our amount - 1
-    // to get correct estimation even when sending all
-    const gas_estimate = await simulateTransaction(
-      accountInfo,
-      endpoint,
-      payload,
-      memo,
-      chainName,
-    );
-
-    console.log('gas_estimate =', gas_estimate);
-
-    const estimatedFeeAmount = calcFee(
-      times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
-    );
-
-    if (sendAll) {
-      amount = (parseInt(amount) - parseInt(estimatedFeeAmount)).toString();
-    }
-
-    console.log('estimatedFeeAmount =', estimatedFeeAmount);
-    const feeAmount = times(estimatedFeeAmount || 0, 1);
-    // TODO: code denom for payed fees
-    const fee = { amount: feeAmount, denom: 'umuon' };
-    const gas = calcGas(fee.amount);
-
-    const gasData = {
-      gas,
-      gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
-    };
-
+    gasData: any,
+  ): Promise<any> {
     const body = {
       base_req: {
         ...accountInfo,
-        memo: options && options.memo,
-        simulate: false,
-        ...gasData,
-      },
-      ...payload,
-    };
-    // Send the base transaction again, now with the specified gas values
-    console.log('Posting', JSON.stringify(body));
-
-    const { value: tx } = await post(chainName, endpoint, body);
-
-    console.log('tx =', JSON.stringify(tx));
-    return tx;
-  }
-
-  // Generate a delegation transaction
-  async generateDelegateTransaction(
-    from: string,
-    to: string,
-    amount: string,
-    denom: Denom,
-    chainName: ChainName,
-    accountInfo: any,
-    options?: SendOptions,
-    sendAll?: boolean,
-  ) {
-    const memo = (options && options.memo) || '';
-
-    const payload = {
-      delegator_address: from,
-      validator_address: to,
-      amount: { amount, denom },
-    };
-
-    const endpoint = `/staking/delegators/${from}/delegations`;
-
-    // We estimate gas with a fake fee of 1, so we pass our amount - 1
-    // to get correct estimation even when sending all
-    const gas_estimate = await simulateTransaction(
-      accountInfo,
-      endpoint,
-      payload,
-      memo,
-      chainName,
-    );
-
-    console.log('gas_estimate =', gas_estimate);
-
-    const estimatedFeeAmount = calcFee(
-      times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
-    );
-
-    console.log('estimatedFeeAmount =', estimatedFeeAmount);
-    const feeAmount = times(estimatedFeeAmount || 0, 1);
-    // TODO: code denom for payed fees
-    const fee = { amount: feeAmount, denom: 'umuon' };
-    const gas = calcGas(fee.amount);
-
-    const gasData = {
-      gas,
-      gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
-    };
-
-    const body = {
-      base_req: {
-        ...accountInfo,
-        memo: options && options.memo,
+        memo: memo,
         simulate: false,
         ...gasData,
       },
@@ -340,23 +235,39 @@ export class CosmosThreshSigClient {
     options?: SendOptions,
     sendAll?: boolean,
     dryRun?: boolean,
-  ) {
+  ): Promise<any> {
     const chainName: ChainName = (options && options.chainName) || 'gaia';
-    /* Step 1: Generate the transaction from the paprameters */
-    const accountInfo = await getAccountInfo(chainName, from);
+    const memo = (options && options.memo) || '';
+    const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
 
-    const rawTx = await this.generateDelegateTransaction(
-      from,
-      to,
-      amount,
-      denom,
-      chainName,
+    const payload = {
+      delegator_address: from,
+      validator_address: to,
+      amount: { amount, denom },
+    };
+
+    const endpoint = `/staking/delegators/${from}/delegations`;
+
+    // Get gasData from simulation
+    const gasData = await simulateAndGetFee(
       accountInfo,
-      options,
-      sendAll,
+      endpoint,
+      payload,
+      memo,
+      chainName,
     );
 
-    return this.signAndBroadcast(from, accountInfo, chainName, rawTx);
+    /* Step 1: Generate the transaction from the paprameters */
+    const rawTx = await this.generateTx(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+      gasData,
+    );
+
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
   }
 
   public async transfer(
@@ -367,23 +278,48 @@ export class CosmosThreshSigClient {
     options?: SendOptions,
     sendAll?: boolean,
     dryRun?: boolean,
-  ) {
+  ): Promise<any> {
     const chainName: ChainName = (options && options.chainName) || 'gaia';
+    const memo = (options && options.memo) || '';
     /* Step 1: Generate the transaction from the paprameters */
-    const accountInfo = await getAccountInfo(chainName, from);
+    const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
 
-    const rawTx = await this.generateTransferTransaction(
-      from,
-      to,
-      amount,
-      denom,
-      chainName,
+    if (sendAll) {
+      const balance = await getBalance(from, chainName);
+      console.log('balance=', balance);
+      amount = getAmountOfDenom(balance, denom);
+      console.log('Balance of', denom, 'is', amount);
+      // If sendAll: do not use the actuall full amount
+      amount = (parseInt(amount) - 1).toString();
+    }
+
+    let payload = { amount: [{ amount, denom }] };
+    const endpoint = `/bank/accounts/${to}/transfers`;
+
+    const [gasData, estimatedFeeAmount] = await simulateAndGetFee(
       accountInfo,
-      options,
-      sendAll,
+      endpoint,
+      payload,
+      memo,
+      chainName,
     );
 
-    return this.signAndBroadcast(from, accountInfo, chainName, rawTx);
+    // If sendAll: Update amount to send
+    if (sendAll) {
+      amount = (parseInt(amount) - parseInt(estimatedFeeAmount) + 1).toString();
+      payload = { amount: [{ amount, denom }] };
+    }
+
+    const rawTx = await this.generateTx(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+      gasData,
+    );
+
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
   }
 
   private async signAndBroadcast(
@@ -391,7 +327,8 @@ export class CosmosThreshSigClient {
     accountInfo: any,
     chainName: ChainName,
     rawTx: any,
-  ) {
+    dryRun?: boolean,
+  ): Promise<any> {
     /* Step 2: Extract the TX hash of the transaction */
     const txHash = createTxHash(rawTx, {
       ...accountInfo,
@@ -400,7 +337,7 @@ export class CosmosThreshSigClient {
 
     console.log('txHash=', txHash);
 
-    /* sign */
+    /* Step 3: Sign */
     const signer = this.getMPCSigner(from);
 
     const { signature, publicKey } = await signTxHash(txHash, signer);
@@ -415,6 +352,7 @@ export class CosmosThreshSigClient {
     };
     console.log('actual_data =', data);
 
+    /* Step 4: Broadcast transaction */
     if (dryRun) {
       console.log('------ Dry Run ----- ');
       console.log(JSON.stringify(data));
@@ -426,6 +364,11 @@ export class CosmosThreshSigClient {
     }
   }
 
+  /*
+   * Retruns a two-party signer.
+   * The signer is a function receiving a txHash and performing
+   * 2-party signing with the gotham server
+   */
   private getMPCSigner(fromAddress: string) {
     return async (signHash: Buffer) => {
       const addressObj: any = this.db
@@ -475,9 +418,50 @@ async function simulateTransaction(
     base_req,
     ...payload,
   };
-  console.log('simlate body', body);
+  console.log('simulate body', body);
   const returnValue = await post(chainName, endpoint, body);
   console.log('returnValue=', returnValue);
   const { gas_estimate } = returnValue;
   return gas_estimate;
+}
+
+/* Send a transaction to the simulation endpoint,
+ * Calculate and the return the gasData object
+ * and the estimatedFeeAmount
+ *
+ */
+async function simulateAndGetFee(
+  accountInfo: AccountInfo,
+  endpoint: string,
+  payload: any,
+  memo: string,
+  chainName: ChainName,
+): Promise<[any, string]> {
+  // We estimate gas with a fake fee of 1, so we pass our amount - 1
+  // to get correct estimation even when sending all
+  const gas_estimate = await simulateTransaction(
+    accountInfo,
+    endpoint,
+    payload,
+    memo,
+    chainName,
+  );
+
+  console.log('gas_estimate =', gas_estimate);
+
+  const estimatedFeeAmount = calcFee(
+    times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
+  );
+
+  console.log('estimatedFeeAmount =', estimatedFeeAmount);
+  const feeAmount = times(estimatedFeeAmount || 0, 1);
+  // TODO: code denom for payed fees
+  const fee = { amount: feeAmount, denom: 'umuon' };
+  const gas = calcGas(fee.amount);
+
+  const gasData = {
+    gas,
+    gas_prices: [{ amount: GAS_PRICE, denom: fee.denom }],
+  };
+  return [gasData, estimatedFeeAmount];
 }
