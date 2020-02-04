@@ -20,7 +20,7 @@ const account2 = {
 const UMUON_IN_MUON = 1000000;
 
 describe('Cosmos API tests', () => {
-  it.only('Transfers money to account', async () => {
+  it('Transfers money to account', async () => {
       const balanceBefore = await getBalance(account1.address, network);
 
       // Init the client
