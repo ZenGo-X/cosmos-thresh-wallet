@@ -79,6 +79,13 @@ export async function getBalance(
   return get(chainName, `/bank/balances/${address}`);
 }
 
+export async function getStakingInfo(
+  delegator: string,
+  chainName: ChainName,
+): Promise<any> {
+  return get(chainName, `/staking/delegators/${delegator}/delegations`);
+}
+
 function getValue(account: StandardAccount | VestingAccount): AccountValue {
   return account.result.type === AccountType.STANDARD
     ? account.result.value
@@ -209,6 +216,10 @@ export class CosmosThreshSigClient {
     chainName: ChainName,
     gasData: any,
   ): Promise<any> {
+    console.log('generate accountInfo=', accountInfo);
+    console.log('generate gasData=', gasData);
+    console.log('generate payLoad=', payload);
+
     const body = {
       base_req: {
         ...accountInfo,
@@ -218,6 +229,7 @@ export class CosmosThreshSigClient {
       },
       ...payload,
     };
+    console.log('Generate body=', body);
     // Send the base transaction again, now with the specified gas values
     console.log('Posting', JSON.stringify(body));
 
@@ -249,13 +261,14 @@ export class CosmosThreshSigClient {
     const endpoint = `/staking/delegators/${from}/delegations`;
 
     // Get gasData from simulation
-    const gasData = await simulateAndGetFee(
+    const [gasData, _] = await simulateAndGetFee(
       accountInfo,
       endpoint,
       payload,
       memo,
       chainName,
     );
+    console.log('GasData=', gasData);
 
     /* Step 1: Generate the transaction from the paprameters */
     const rawTx = await this.generateTx(
@@ -281,7 +294,6 @@ export class CosmosThreshSigClient {
   ): Promise<any> {
     const chainName: ChainName = (options && options.chainName) || 'gaia';
     const memo = (options && options.memo) || '';
-    /* Step 1: Generate the transaction from the paprameters */
     const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
 
     if (sendAll) {
@@ -303,6 +315,7 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
+    console.log('GasData=', gasData);
 
     // If sendAll: Update amount to send
     if (sendAll) {
