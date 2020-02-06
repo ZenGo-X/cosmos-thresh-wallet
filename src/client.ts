@@ -79,11 +79,28 @@ export async function getBalance(
   return get(chainName, `/bank/balances/${address}`);
 }
 
-export async function getStakingInfo(
+export async function getDelegationInfo(
   delegator: string,
   chainName: ChainName,
 ): Promise<any> {
   return get(chainName, `/staking/delegators/${delegator}/delegations`);
+}
+
+export async function getRewardsInfo(
+  delegator: string,
+  chainName: ChainName,
+): Promise<any> {
+  return get(chainName, `/distribution/delegators/${delegator}/rewards`);
+}
+
+export async function getUnbondingInfo(
+  delegator: string,
+  chainName: ChainName,
+): Promise<any> {
+  return get(
+    chainName,
+    `/staking/delegators/${delegator}/unbonding_delegations`,
+  );
 }
 
 function getValue(account: StandardAccount | VestingAccount): AccountValue {
@@ -239,6 +256,48 @@ export class CosmosThreshSigClient {
     return tx;
   }
 
+  public async collectRewards(
+    delegator: string,
+    options?: SendOptions,
+    dryRun?: boolean,
+  ): Promise<any> {
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+    const memo = (options && options.memo) || '';
+    const accountInfo: AccountInfo = await getAccountInfo(chainName, delegator);
+
+    const payload = {};
+
+    const endpoint = `/distribution/delegators/${delegator}/rewards`;
+
+    // Get gasData from simulation
+    const [gasData, _] = await simulateAndGetFee(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+    );
+    console.log('GasData=', gasData);
+
+    /* Step 1: Generate the transaction from the paprameters */
+    const rawTx = await this.generateTx(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+      gasData,
+    );
+
+    return this.signAndBroadcast(
+      delegator,
+      accountInfo,
+      chainName,
+      rawTx,
+      dryRun,
+    );
+  }
+
   public async delegate(
     from: string,
     to: string,
@@ -259,6 +318,50 @@ export class CosmosThreshSigClient {
     };
 
     const endpoint = `/staking/delegators/${from}/delegations`;
+
+    // Get gasData from simulation
+    const [gasData, _] = await simulateAndGetFee(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+    );
+    console.log('GasData=', gasData);
+
+    /* Step 1: Generate the transaction from the paprameters */
+    const rawTx = await this.generateTx(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+      gasData,
+    );
+
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
+  }
+
+  public async undelegate(
+    from: string,
+    to: string,
+    amount: string,
+    denom: Denom,
+    options?: SendOptions,
+    sendAll?: boolean,
+    dryRun?: boolean,
+  ): Promise<any> {
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+    const memo = (options && options.memo) || '';
+    const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
+
+    const payload = {
+      delegator_address: from,
+      validator_address: to,
+      amount: { amount, denom },
+    };
+
+    const endpoint = `/staking/delegators/${from}/unbonding_delegations`;
 
     // Get gasData from simulation
     const [gasData, _] = await simulateAndGetFee(
