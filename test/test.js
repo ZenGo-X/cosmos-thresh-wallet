@@ -23,9 +23,9 @@ const account2 = {
   address: 'cosmos1qd59rlrm0ymz3r8lpj4yecazd38grxxjtw9zk6',
 };
 
-const validator = "cosmosvaloper169cxw3pkffw66vxlppy86n205rklhna8l8mtam";
+const delegatingAddress = "cosmos1uxw2cretxn43yc9qdkfgp30hvxvq9jum5jl65q";
 
-const UMUON_IN_MUON = 1000000;
+const validator = "cosmosvaloper169cxw3pkffw66vxlppy86n205rklhna8l8mtam";
 
 describe('Cosmos API tests', () => {
   it('Transfers money to account', async () => {
@@ -61,14 +61,14 @@ describe('Cosmos API tests', () => {
   }).timeout(100000);
 
   it('Delegates funds to a validator', async () => {
-  const balanceBefore = await getStakingInfo(bank.address, network);
+  const balanceBefore = await getStakingInfo(delegatingAddress, network);
 
   // Init the client
   await client.init();
-  const res = await client.delegate(bank.address, validator, "10000", "umuon");
+  const res = await client.delegate(delegatingAddress, validator, "10000", "umuon");
   assert.ok(res.logs[0].success)
 
-  const newBalance= await getStakingInfo(bank.address, network);
+  const newBalance= await getStakingInfo(delegatingAddress, network);
   const oldBalance = balanceBefore.result[0].balance || 0;
   const exptectedBalance = parseInt(oldBalance) + 10000
       console.log(oldBalance);
