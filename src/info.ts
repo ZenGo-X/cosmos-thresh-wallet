@@ -7,6 +7,15 @@ export async function getTxInfo(
   return get(chainName, `/txs/${txHash}`);
 }
 
+export async function getRedelegationsInfo(
+  chainName: ChainName,
+  delegator?: string,
+): Promise<any> {
+  const query =
+    '/staking/redelegations' + (delegator ? `?&delegator=${delegator}` : '');
+  return get(chainName, query);
+}
+
 interface GetTransactionsOptions {
   sender?: string;
   receiver?: string;

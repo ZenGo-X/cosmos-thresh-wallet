@@ -386,6 +386,52 @@ export class CosmosThreshSigClient {
     return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
   }
 
+  public async redelegate(
+    from: string,
+    validator_src: string,
+    validator_dst: string,
+    amount: string,
+    denom: Denom,
+    options?: SendOptions,
+    sendAll?: boolean,
+    dryRun?: boolean,
+  ): Promise<any> {
+    const chainName: ChainName = (options && options.chainName) || 'gaia';
+    const memo = (options && options.memo) || '';
+    const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
+
+    const payload = {
+      delegator_address: from,
+      validator_src_address: validator_src,
+      validator_dst_address: validator_dst,
+      amount: { amount, denom },
+    };
+
+    const endpoint = `/staking/delegators/${from}/redelegations`;
+
+    // Get gasData from simulation
+    const [gasData, _] = await simulateAndGetFee(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+    );
+    console.log('GasData=', gasData);
+
+    /* Step 1: Generate the transaction from the paprameters */
+    const rawTx = await this.generateTx(
+      accountInfo,
+      endpoint,
+      payload,
+      memo,
+      chainName,
+      gasData,
+    );
+
+    return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
+  }
+
   public async transfer(
     from: string,
     to: string,
