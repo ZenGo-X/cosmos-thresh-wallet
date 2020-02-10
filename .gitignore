@@ -37,9 +37,6 @@ Thumbs.db
 # Ignore built ts files
 dist/**/*
 
-# ignore yarn.lock
-yarn.lock
-
 db
 client_db
 demo/client-db/

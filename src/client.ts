@@ -13,6 +13,7 @@ import { createTxHash, signTxHash, injectSignatrue } from './cosmos/api/signTx';
 import { DEFAULT_GAS_COEFFICIENT, Denom } from './constants';
 import * as CryptoJS from 'crypto-js';
 import { AccAddress } from './address/acc-address';
+import { Coin } from './Coin';
 
 import fs from 'fs';
 import path from 'path';
@@ -52,11 +53,6 @@ interface AccountValue {
 interface Balance {
   height: string;
   result: [Coin];
-}
-
-export interface Coin {
-  denom: string;
-  amount: string;
 }
 
 function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {

@@ -11,6 +11,7 @@ const {
   getDelegationInfo,
   getUnbondingInfo,
   getRewardsInfo,
+  getAPR,
 } = require('../dist/src');
 
 const client = new CosmosThreshSigClient();
@@ -71,6 +72,13 @@ program
         ),
       ),
     );
+  });
+
+program
+  .command('apr')
+  .option('-n, --network [name]', 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (options) => {
+    console.log(await getAPR(options.network || 'gaia'));
   });
 
 program

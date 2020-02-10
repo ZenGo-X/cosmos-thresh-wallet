@@ -1,7 +1,6 @@
 const {
   CosmosThreshSigClient,
   getBalance,
-  mnemonicTransfer,
   getTxInfo,
   getTransactions,
   getStakingInfo,
@@ -47,11 +46,8 @@ describe("Cosmos API tests", () => {
 
     const newBalance = await getBalance(account1.address, network);
     const oldBalance = balanceBefore.result[0].amount || 0;
-    const exptectedBalance = parseInt(oldBalance) + 10000;
-    assert.strictEqual(
-      exptectedBalance.toString(),
-      newBalance.result[0].amount
-    );
+    const expectedBalance = parseInt(oldBalance) + 10000;
+    assert.strictEqual(expectedBalance.toString(), newBalance.result[0].amount);
   }).timeout(100000);
 
   it("Transfers funds to an account then sends all funds back", async () => {
@@ -99,12 +95,9 @@ describe("Cosmos API tests", () => {
 
     const newBalance = await getStakingInfo(delegatingAddress, network);
     const oldBalance = balanceBefore.result[0].balance || 0;
-    const exptectedBalance = parseInt(oldBalance) + 10000;
-    console.log(oldBalance);
-    console.log(exptectedBalance);
-    console.log(newBalance);
+    const expectedBalance = parseInt(oldBalance) + 10000;
     assert.strictEqual(
-      exptectedBalance.toString(),
+      expectedBalance.toString(),
       newBalance.result[0].balance
     );
   }).timeout(100000);
@@ -124,12 +117,9 @@ describe("Cosmos API tests", () => {
 
     const newBalance = await getStakingInfo(delegatingAddress, network);
     const oldBalance = balanceBefore.result[0].balance || 0;
-    const exptectedBalance = parseInt(oldBalance) + 10000;
-    console.log(oldBalance);
-    console.log(exptectedBalance);
-    console.log(newBalance);
+    const expectedBalance = parseInt(oldBalance) + 10000;
     assert.strictEqual(
-      exptectedBalance.toString(),
+      expectedBalance.toString(),
       newBalance.result[0].balance
     );
   }).timeout(100000);
@@ -141,7 +131,6 @@ describe("Cosmos API tests", () => {
     assert.ok(res.logs[0].success);
 
     const rewardsAfter = await getRewardsInfo(delegatingAddress, network);
-    console.log(rewardsAfter);
     // No rewards after collection
     assert.equal(rewardsAfter.result.total, null);
   }).timeout(100000);
