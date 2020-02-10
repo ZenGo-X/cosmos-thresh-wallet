@@ -1,6 +1,6 @@
 const rp = require('request-promise');
 const Chains = {
-  cosmoshub_3: 'https://fcd.terra.dev',
+  cosmoshub_3: 'https://api.cosmos.network',
   gaia: 'http://ec2-54-189-179-159.us-west-2.compute.amazonaws.com:1317',
 };
 
