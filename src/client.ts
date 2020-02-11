@@ -20,9 +20,12 @@ import path from 'path';
 import low from 'lowdb';
 import FileSync from 'lowdb/adapters/FileSync';
 
+const client_debug = require('debug')('client_debug');
+
 const P1_ENDPOINT = 'http://localhost:8000';
 const HD_COIN_INDEX = 0;
 const CLIENT_DB_PATH = path.join(__dirname, '../../client_db');
+const MUON = 1;
 
 /* helpers */
 enum AccountType {
@@ -55,6 +58,22 @@ interface Balance {
   result: [Coin];
 }
 
+type SendOptions = {
+  memo?: string;
+  chainName?: ChainName;
+  feeDenom?: string;
+};
+
+type BroadcastType = 'async' | 'sync' | 'block';
+
+interface AccountInfo {
+  from: string;
+  chain_id: string;
+  account_number: string;
+  sequence: string;
+}
+
+/* Get the total amount owned by and account of a certain denom */
 function getAmountOfDenom(balanceResult: Balance, denom: Denom): string {
   const value = balanceResult.result.find((res) => res.denom === denom);
   return value ? value.amount : '';
@@ -68,6 +87,7 @@ function ensureDirSync(dirpath: string) {
   }
 }
 
+/* Returns the balance of an address */
 export async function getBalance(
   address: string,
   chainName: ChainName,
@@ -75,6 +95,7 @@ export async function getBalance(
   return get(chainName, `/bank/balances/${address}`);
 }
 
+/* Returns the information about current delegations by and address */
 export async function getDelegationInfo(
   delegator: string,
   chainName: ChainName,
@@ -82,6 +103,7 @@ export async function getDelegationInfo(
   return get(chainName, `/staking/delegators/${delegator}/delegations`);
 }
 
+/* Returns information of outstanding rewards of an address */
 export async function getRewardsInfo(
   delegator: string,
   chainName: ChainName,
@@ -89,6 +111,7 @@ export async function getRewardsInfo(
   return get(chainName, `/distribution/delegators/${delegator}/rewards`);
 }
 
+/* Returns information of funds currently during unbonding period */
 export async function getUnbondingInfo(
   delegator: string,
   chainName: ChainName,
@@ -105,13 +128,6 @@ function getValue(account: StandardAccount | VestingAccount): AccountValue {
     : account.result.value.BaseVestingAccount.BaseAccount;
 }
 
-interface AccountInfo {
-  from: string;
-  chain_id: string;
-  account_number: string;
-  sequence: string;
-}
-
 async function getAccountInfo(
   chainName: ChainName,
   from: string,
@@ -119,23 +135,15 @@ async function getAccountInfo(
   /* latest */
   const latest = await get(chainName, '/blocks/latest');
   const { chain_id } = latest.block.header;
-  console.log('chain_id =', chain_id);
+  client_debug('chain_id =', chain_id);
 
   /* account */
   const account = await get(chainName, `/auth/accounts/${from}`);
-  console.log('account =', account);
+  client_debug('account =', account);
   const { account_number, sequence } = getValue(account);
 
   return { from, chain_id, account_number, sequence };
 }
-
-type SendOptions = {
-  memo?: string;
-  chainName?: ChainName;
-  feeDenom?: string;
-};
-
-type BroadcastType = 'async' | 'sync' | 'block';
 
 export class CosmosThreshSigClient {
   private mainnet: boolean;
@@ -229,9 +237,9 @@ export class CosmosThreshSigClient {
     chainName: ChainName,
     gasData: any,
   ): Promise<any> {
-    console.log('generate accountInfo=', accountInfo);
-    console.log('generate gasData=', gasData);
-    console.log('generate payLoad=', payload);
+    client_debug('generate accountInfo=', accountInfo);
+    client_debug('generate gasData=', gasData);
+    client_debug('generate payLoad=', payload);
 
     const body = {
       base_req: {
@@ -242,13 +250,13 @@ export class CosmosThreshSigClient {
       },
       ...payload,
     };
-    console.log('Generate body=', body);
+    client_debug('Generate body=', body);
     // Send the base transaction again, now with the specified gas values
-    console.log('Posting', JSON.stringify(body));
+    client_debug('Posting', JSON.stringify(body));
 
     const { value: tx } = await post(chainName, endpoint, body);
 
-    console.log('tx =', JSON.stringify(tx));
+    client_debug('tx =', JSON.stringify(tx));
     return tx;
   }
 
@@ -273,7 +281,7 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
-    console.log('GasData=', gasData);
+    client_debug('GasData=', gasData);
 
     /* Step 1: Generate the transaction from the paprameters */
     const rawTx = await this.generateTx(
@@ -323,7 +331,7 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
-    console.log('GasData=', gasData);
+    client_debug('GasData=', gasData);
 
     /* Step 1: Generate the transaction from the paprameters */
     const rawTx = await this.generateTx(
@@ -367,7 +375,7 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
-    console.log('GasData=', gasData);
+    client_debug('GasData=', gasData);
 
     /* Step 1: Generate the transaction from the paprameters */
     const rawTx = await this.generateTx(
@@ -413,7 +421,7 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
-    console.log('GasData=', gasData);
+    client_debug('GasData=', gasData);
 
     /* Step 1: Generate the transaction from the paprameters */
     const rawTx = await this.generateTx(
@@ -441,13 +449,20 @@ export class CosmosThreshSigClient {
     const memo = (options && options.memo) || '';
     const accountInfo: AccountInfo = await getAccountInfo(chainName, from);
 
+    /* In order for gas estimation to return correctly it requires gas amount > 0
+     * If we want to estimate gas for a transaction sending all funds,
+     * we need to specify an amount such that gas + amount_to_send < total_balance.
+     * We thus use total_balance - MUON as the amount_to_send and gas = MUON.
+     * After the actual gas estimation is received, we substitute amount_to_send
+     * with total_balance - gas_actual.
+     * We then add back the MUON we subtracted for initial estimation.
+     * */
     if (sendAll) {
       const balance = await getBalance(from, chainName);
-      console.log('balance=', balance);
+      client_debug('balance=', balance);
       amount = getAmountOfDenom(balance, denom);
-      console.log('Balance of', denom, 'is', amount);
-      // If sendAll: do not use the actuall full amount
-      amount = (parseInt(amount) - 1).toString();
+      client_debug('Balance of', denom, 'is', amount);
+      amount = (parseInt(amount) - MUON).toString();
     }
 
     let payload = { amount: [{ amount, denom }] };
@@ -460,11 +475,17 @@ export class CosmosThreshSigClient {
       memo,
       chainName,
     );
-    console.log('GasData=', gasData);
+    client_debug('GasData=', gasData);
 
-    // If sendAll: Update amount to send
+    // If sendAll: Update amount to send to be total_balance - actual_gas
+    // and add back the MUON subtracted for estimation. Otherwise you'll have
+    // MUON left in the account after the transaction is complete
     if (sendAll) {
-      amount = (parseInt(amount) - parseInt(estimatedFeeAmount) + 1).toString();
+      amount = (
+        parseInt(amount) -
+        parseInt(estimatedFeeAmount) +
+        MUON
+      ).toString();
       payload = { amount: [{ amount, denom }] };
     }
 
@@ -480,6 +501,12 @@ export class CosmosThreshSigClient {
     return this.signAndBroadcast(from, accountInfo, chainName, rawTx, dryRun);
   }
 
+  /* This is where we sign and broadcast the transaction in json format.
+   * Step 1: The rawTx is generated according to parameters passed by the user
+   * Step 2: The digest (txHash) of the transaction is extracted for signing
+   * Step 3: Perform a 2 party signing with gotham server
+   * Step 4: Broadcast the transaction to the blockchain and wait for response.
+   */
   private async signAndBroadcast(
     from: string,
     accountInfo: any,
@@ -487,13 +514,14 @@ export class CosmosThreshSigClient {
     rawTx: any,
     dryRun?: boolean,
   ): Promise<any> {
+    /* Step 1: Step 1 was generating the rawTx this function received */
     /* Step 2: Extract the TX hash of the transaction */
     const txHash = createTxHash(rawTx, {
       ...accountInfo,
       type: 'send',
     });
 
-    console.log('txHash=', txHash);
+    client_debug('txHash=', txHash);
 
     /* Step 3: Sign */
     const signer = this.getMPCSigner(from);
@@ -502,28 +530,24 @@ export class CosmosThreshSigClient {
 
     const signedTx = injectSignatrue(rawTx, signature, publicKey, accountInfo);
 
-    console.log('type =', typeof signedTx);
-    console.log('signedTx =', signedTx);
+    client_debug('signedTx =', signedTx);
     const data = {
       tx: signedTx,
       mode: 'block',
     };
-    console.log('actual_data =', data);
+    client_debug('actual_data =', data);
 
-    /* Step 4: Broadcast transaction */
+    /* Step 4: Broadcast transaction and return the receipt*/
     if (dryRun) {
-      console.log('------ Dry Run ----- ');
-      console.log(JSON.stringify(data));
+      return data;
     } else {
-      console.log(' ===== Executing ===== ');
       const res = await post(chainName, `/txs`, data);
-      console.log('Send Res', res);
       return res;
     }
   }
 
   /*
-   * Retruns a two-party signer.
+   * Returns a two-party signer.
    * The signer is a function receiving a txHash and performing
    * 2-party signing with the gotham server
    */
@@ -539,7 +563,7 @@ export class CosmosThreshSigClient {
         HD_COIN_INDEX,
         addressIndex,
       );
-      console.log('addressObj=', addressObj);
+      client_debug('addressObj=', addressObj);
 
       const signatureMPC: MPCSignature = await this.p2.sign(
         signHash,
@@ -547,14 +571,12 @@ export class CosmosThreshSigClient {
         HD_COIN_INDEX,
         addressIndex,
       );
-      console.log('MPCSignatreu', MPCSignature);
+      client_debug('Signature', MPCSignature);
       const signature = signatureMPC.toBuffer();
-      console.log('sigBuffer=', signature);
 
       const publicKeyBasePoint = this.getPublicKey(addressIndex);
       const publicKeyHex = publicKeyBasePoint.encode('hex', true);
       const publicKey = Buffer.from(publicKeyHex, 'hex');
-      console.log('publicKeyBuffer =', publicKey);
       return { signature, publicKey };
     };
   }
@@ -567,18 +589,22 @@ async function simulateTransaction(
   memo: string,
   chainName: ChainName,
 ): Promise<string> {
-  const simulationFees = { amount: '1', denom: 'umuon' };
+  /* The simulated transaction requires gas amount > 0, and simulate = true
+   * in order to return a correct value. The place holder can then be replaced
+   * with the actual gas estimation returned by the simulation
+   */
+  const simulationFees = { amount: `${MUON}`, denom: 'umuon' };
   const gasData = { gas: 'auto', fees: [simulationFees] };
 
   const base_req = { ...accountInfo, memo, simulate: true, ...gasData };
-  console.log('simulate base_req =', base_req);
+  client_debug('simulate base_req =', base_req);
   const body = {
     base_req,
     ...payload,
   };
-  console.log('simulate body', body);
+  client_debug('simulate body', body);
   const returnValue = await post(chainName, endpoint, body);
-  console.log('returnValue=', returnValue);
+  client_debug('returnValue=', returnValue);
   const { gas_estimate } = returnValue;
   return gas_estimate;
 }
@@ -595,8 +621,6 @@ async function simulateAndGetFee(
   memo: string,
   chainName: ChainName,
 ): Promise<[any, string]> {
-  // We estimate gas with a fake fee of 1, so we pass our amount - 1
-  // to get correct estimation even when sending all
   const gas_estimate = await simulateTransaction(
     accountInfo,
     endpoint,
@@ -605,13 +629,13 @@ async function simulateAndGetFee(
     chainName,
   );
 
-  console.log('gas_estimate =', gas_estimate);
+  client_debug('gas_estimate =', gas_estimate);
 
   const estimatedFeeAmount = calcFee(
     times(gas_estimate, DEFAULT_GAS_COEFFICIENT),
   );
 
-  console.log('estimatedFeeAmount =', estimatedFeeAmount);
+  client_debug('estimatedFeeAmount =', estimatedFeeAmount);
   const feeAmount = times(estimatedFeeAmount || 0, 1);
   // TODO: code denom for payed fees
   const fee = { amount: feeAmount, denom: 'umuon' };

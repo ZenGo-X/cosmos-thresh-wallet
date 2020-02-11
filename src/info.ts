@@ -1,12 +1,6 @@
-import { get, post, ChainName } from './api';
+import { get, ChainName } from './api';
 import { Coin } from './Coin';
-
-export async function getTxInfo(
-  txHash: string,
-  chainName: ChainName,
-): Promise<any> {
-  return get(chainName, `/txs/${txHash}`);
-}
+const info_debug = require('debug')('info_debug');
 
 interface BondedTokensInfo {
   not_bonded_tokens: string;
@@ -28,6 +22,63 @@ interface MintingInfo {
   result: string;
 }
 
+interface ValidatorInfo {
+  heigh: string;
+  result: ValidatorDetails;
+}
+
+interface ValidatorDetails {
+  jailed: boolean;
+  commission: CommissionInfo;
+}
+
+interface CommissionInfo {
+  rate: string;
+  max_rate: string;
+  max_change_rate: string;
+}
+
+export async function getTxInfo(
+  txHash: string,
+  chainName: ChainName,
+): Promise<any> {
+  return get(chainName, `/txs/${txHash}`);
+}
+
+export async function getValidatorCommission(
+  validator: string,
+  chainName: ChainName,
+): Promise<string> {
+  const validatorInfo: any = await get(
+    chainName,
+    `/staking/validators/${validator}`,
+  );
+  const commission = validatorInfo.result.commission.commission_rates.rate;
+  return commission;
+}
+
+export async function getEffectiveValidatorAPR(
+  validator: string,
+  chainName: ChainName,
+): Promise<string | Error> {
+  let apr;
+  try {
+    apr = await getAPR(chainName);
+  } catch {
+    return new Error('Unable to parse affective apr');
+  }
+
+  const commission = await getValidatorCommission(validator, chainName);
+  try {
+    return (
+      (1 - parseFloat(commission)) *
+      parseFloat(apr as string)
+    ).toString();
+  } catch {
+    return new Error('Unable to parse affective apr');
+  }
+}
+
 export async function getAPR(chainName: ChainName): Promise<string | Error> {
   const bondedTokensRes: any = await get(chainName, '/staking/pool');
   const bondedTokens = bondedTokensRes.result.bonded_tokens;
@@ -40,9 +91,7 @@ export async function getAPR(chainName: ChainName): Promise<string | Error> {
 
   try {
     const apr =
-      (parseFloat(inflation) /
-        (parseFloat(bondedTokens) / parseFloat(supply))) *
-      100;
+      parseFloat(inflation) / (parseFloat(bondedTokens) / parseFloat(supply));
     return apr.toString();
   } catch {
     return new Error('Unable to parse APR');
@@ -75,6 +124,6 @@ export async function getTransactions(options: GetTransactionsOptions = {}) {
     (options.receiver ? `&transfer.recipient=${options.receiver}` : '') +
     (options.page ? `&page=${options.page}` : '') +
     (options.limit ? `&limit=${options.limit}` : '');
-  console.log(query);
+  info_debug(query);
   return get(chainName, query);
 }
