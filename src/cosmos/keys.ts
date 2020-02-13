@@ -1,30 +1,14 @@
+// Cosmos-thresh-wallet
+//
+// Copyright 2020 by Kzen Networks (kzencorp.com)
+// Cosmos-threash-wallet is free software: you can redistribute
+// it and/or modify it under the terms of the GNU General Public
+// License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+
 import * as bech32 from 'bech32';
 import * as secp256k1 from 'secp256k1';
 import * as CryptoJS from 'crypto-js';
-
-// function getAddress(publicKey: Buffer): Buffer {
-//   if (typeof publicKey !== 'object' || publicKey.constructor !== Buffer) {
-//     throw TypeError('parameter must be Buffer that contains public key');
-//   }
-//
-//   const message: LibWordArray = Hex.parse(publicKey.toString('hex'));
-//   const array: LibWordArray = SHA256(message);
-//   const hash = RIPEMD160(array).toString();
-//   const address = Buffer.from(hash, 'hex');
-//   return bech32.toWords(address);
-// }
-//
-// // NOTE: this only works with a compressed public key (33 bytes)
-// export function getAccAddress(publicKey: Buffer): string {
-//   const words = getAddress(publicKey);
-//   return bech32.encode('cosmos', words);
-// }
-
-// export const getTerraAddress = (publicKey: Buffer) => {
-//   const message = CryptoJS.enc.Hex.parse(publicKey.toString('hex'));
-//   const address = CryptoJS.RIPEMD160(CryptoJS.SHA256(message)).toString();
-//   return bech32.encode('cosmos', address.toString());
-// };
 
 const bech32ify = (address: string, prefix: string) => {
   const words = bech32.toWords(Buffer.from(address, 'hex'));
