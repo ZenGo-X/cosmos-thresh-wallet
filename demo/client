@@ -1,91 +1,284 @@
 #!/usr/bin/env node
 
-const program = require('commander');
-const fs = require('fs');
-const path = require('path');
-const low = require('lowdb');
-const FileSync = require('lowdb/adapters/FileSync');
-const CLIENT_DB_PATH = path.join(__dirname, 'client-db');
-const { getBalance, transfer } = require('../dist/src');
-const { Address, AccAddress} = require('../dist/src');
+const program = require("commander");
 
-const terra = require('@terra-money/core');
+const {
+  CosmosThreshSigClient,
+  getBalance,
+  getTxInfo,
+  getRedelegationsInfo,
+  getTransactions,
+  getDelegationInfo,
+  getUnbondingInfo,
+  getRewardsInfo,
+  getAPR,
+  getValidatorCommission,
+  getEffectiveValidatorAPR
+} = require("../dist/src");
 
-function ensureDirSync(dirpath) {
-    try {
-        fs.mkdirSync(dirpath, { recursive: true });
-    } catch (err) {
-        if (err.code !== 'EEXIST') throw err;
-    }
-}
-
-function mnemonicToAddress(mnemonic) {
-    const masterKey = terra.deriveMasterKeySync(mnemonic);
-    const keypair = terra.deriveKeypair(masterKey);
-    const address = AccAddress.fromPublicKey(keypair.publicKey);
-    return address.toBech32();
-}
-
-function mnemonicToPrivateKey(mnemonic) {
-    const masterKey = terra.deriveMasterKeySync(mnemonic);
-    const keypair = terra.deriveKeypair(masterKey);
-    return keypair.privateKey;
-}
-
-
-ensureDirSync(CLIENT_DB_PATH);
-const adapter = new FileSync(path.join(CLIENT_DB_PATH, 'db.json'));
-const db = low(adapter);
-db.defaults({ addresses: [] }).write();
+const client = new CosmosThreshSigClient();
 
 program
-    .command('address')
-    .action( () => {
-        const mnemonic = terra.generateMnemonic();
-        const address = mnemonicToAddress(mnemonic);
-        console.log(address);
-        db.get('addresses').push({ address, mnemonic }).write();
-    });
-
-/**
- * response example:
- *
- * { balance:
-   [ { denom: 'uluna',
-       available: '10000000',
-       delegatedVesting: '0',
-       delegatable: '10000000',
-       freedVesting: '0',
-       unbonding: '0',
-       remainingVesting: '0' },
-     { denom: 'uusd',
-       available: '10000000',
-       delegatedVesting: '0',
-       delegatable: '0',
-       freedVesting: '0',
-       unbonding: '0',
-       remainingVesting: '0' } ],
-  vesting: [],
-  delegations: [],
-  unbondings: [] }
- */
-program
-    .command('balance <address>')
-    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
-    .action(async (address, options) => {
-        console.log(await getBalance(address, options.network || 'gaia'));
-    });
+  .command("address")
+  .option("-i, --index <index>", "Address index")
+  .action(async options => {
+    await client.init();
+    const address = client.getAddress(options.index);
+    console.log(address);
+  });
 
 program
-    .command('transfer <from> <to> <amount>')
-    .option('-d, --denom [simbol]', 'denomination of the transfer ("muon" default, "usd", ...)')
-    .option('-n, --network [name]', 'Name of network ("gaia" or "columbus_2")')
-    .action(async (from, to, amount, options) => {
-        const { mnemonic } = db.get('addresses').find({ address: from }).value();
-        console.log('mnemonic =', mnemonic);
-        const privateKey = mnemonicToPrivateKey(mnemonic);
-        console.log('privateKey =', privateKey);
-        console.log(await transfer(privateKey.toString('hex'), from, to, amount, options.denom || 'umuon', options.network || 'gaia'));
-    });
+  .command("balance <address>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (address, options) => {
+    console.log(await getBalance(address, options.network || "gaia"));
+  });
+
+program
+  .command("delegations <address>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (address, options) => {
+    console.log(await getDelegationInfo(address, options.network || "gaia"));
+  });
+
+program
+  .command("rewards <address>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (address, options) => {
+    console.log(
+      JSON.stringify(await getRewardsInfo(address, options.network || "gaia"))
+    );
+  });
+
+program
+  .command("unbonding <address>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (address, options) => {
+    const res = await getUnbondingInfo(address, options.network || "gaia");
+    console.log(JSON.stringify(res, null, 2));
+  });
+
+program
+  .command("redelegations")
+  .option("-d, --delegator [name]", "Delegator address")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async options => {
+    const res = await getRedelegationsInfo(
+      options.network || "gaia",
+      options.delegator
+    );
+    console.log(JSON.stringify(res, null, 2));
+  });
+
+program
+  .command("apr")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async options => {
+    const apr = await getAPR(options.network || "gaia");
+    console.log((parseFloat(apr) * 100).toFixed(2) + "%");
+  });
+
+program
+  .command("commission <validator>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (validator, options) => {
+    const commision = await getValidatorCommission(
+      validator,
+      options.network || "gaia"
+    );
+    console.log((parseFloat(commision) * 100).toFixed(2) + "%");
+  });
+
+program
+  .command("validator_apr <validator>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (validator, options) => {
+    const apr = await getEffectiveValidatorAPR(
+      validator,
+      options.network || "gaia"
+    );
+    console.log((parseFloat(apr) * 100).toFixed(2) + "%");
+  });
+
+program
+  .command("tx <txhash>")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async (txhash, options) => {
+    console.log(await getTxInfo(txhash, options.network || "gaia"));
+  });
+
+program
+  .command("transactions")
+  .option("-s --sender <sender>", "Sender address")
+  .option("-r --receiver <receiver>", "Sender address")
+  .option("-p --page <page>", "Page number")
+  .option("-l --limit <limit>", "Page limit")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "cosmoshub_3")')
+  .action(async options => {
+    const txs = await getTransactions(options);
+    console.log(JSON.stringify(txs, null, 2));
+  });
+
+program
+  .command("transfer <from> <to> <amount>")
+  .option(
+    "-d, --denom [symbol]",
+    'denomination of the transfer ("umuon" default, "atom", ...)'
+  )
+  .option(
+    "-fd, --feedenom [symbol]",
+    'denomination of the fee ("umuon" default, "atom", ...)'
+  )
+  .option("-m, --memo [memo]", "Add a memo to your transaction")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "consmoshub_3")')
+  .option("-dr, --dry_run", "Print the tx without posting it")
+  .option("-all, --all", "Transfer all the coins of the specified currency")
+  .action(async (from, to, amount, options) => {
+    await client.init();
+    const sendOptions = {
+      memo: options.memo,
+      chainName: options.network,
+      feeDenom: options.feedenom
+    };
+    const receipt = await client.transfer(
+      from,
+      to,
+      amount,
+      options.denom || "umuon",
+      sendOptions,
+      options.all,
+      options.dry_run
+    );
+    dryRunHeader(options.dry_run);
+    console.log(JSON.stringify(receipt, null, 2));
+  });
+
+program
+  .command("delegate <from> <to> <amount>")
+  .option(
+    "-d, --denom [symbol]",
+    'denomination of the transfer ("umuon" default, "atom", ...)'
+  )
+  .option(
+    "-fd, --feedenom [symbol]",
+    'denomination of the fee ("umuon" default, "atom", ...)'
+  )
+  .option("-m, --memo [memo]", "Add a memo to your transaction")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "consmoshub_3")')
+  .option("-dr, --dry_run", "Print the tx without posting it")
+  .option("-all, --all", "Transfer all the coins of the specified currency")
+  .action(async (from, to, amount, options) => {
+    await client.init();
+    const sendOptions = {
+      memo: options.memo,
+      chainName: options.network,
+      feeDenom: options.feedenom
+    };
+    const receipt = await client.delegate(
+      from,
+      to,
+      amount,
+      options.denom || "umuon",
+      sendOptions,
+      options.all,
+      options.dry_run
+    );
+    dryRunHeader(options.dry_run);
+    console.log(JSON.stringify(receipt, null, 2));
+  });
+
+program
+  .command("undelegate <delegator> <validator> <amount>")
+  .option(
+    "-d, --denom [symbol]",
+    'denomination of the transfer ("umuon" default, "atom", ...)'
+  )
+  .option(
+    "-fd, --feedenom [symbol]",
+    'denomination of the fee ("umuon" default, "atom", ...)'
+  )
+  .option("-m, --memo [memo]", "Add a memo to your transaction")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "consmoshub_3")')
+  .option("-dr, --dry_run", "Print the tx without posting it")
+  .option("-all, --all", "Transfer all the coins of the specified currency")
+  .action(async (delegator, validator, amount, options) => {
+    await client.init();
+    const sendOptions = {
+      memo: options.memo,
+      chainName: options.network,
+      feeDenom: options.feedenom
+    };
+    const receipt = await client.undelegate(
+      delegator,
+      validator,
+      amount,
+      options.denom || "umuon",
+      sendOptions,
+      options.all,
+      options.dry_run
+    );
+    dryRunHeader(options.dry_run);
+    console.log(JSON.stringify(receipt, null, 2));
+  });
+
+program
+  .command("redelegate <delegator> <validator_src> <validator_dst> <amount>")
+  .option(
+    "-d, --denom [symbol]",
+    'denomination of the transfer ("umuon" default, "atom", ...)'
+  )
+  .option(
+    "-fd, --feedenom [symbol]",
+    'denomination of the fee ("umuon" default, "atom", ...)'
+  )
+  .option("-m, --memo [memo]", "Add a memo to your transaction")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "consmoshub_3")')
+  .option("-dr, --dry_run", "Print the tx without posting it")
+  .option("-all, --all", "Transfer all the coins of the specified currency")
+  .action(async (delegator, validator_src, validator_dst, amount, options) => {
+    await client.init();
+    const sendOptions = {
+      memo: options.memo,
+      chainName: options.network,
+      feeDenom: options.feedenom
+    };
+    const receipt = await client.redelegate(
+      delegator,
+      validator_src,
+      validator_dst,
+      amount,
+      options.denom || "umuon",
+      sendOptions,
+      options.all,
+      options.dry_run
+    );
+    dryRunHeader(options.dry_run);
+    console.log(JSON.stringify(receipt, null, 2));
+  });
+
+program
+  .command("collect <delegator>")
+  .option("-m, --memo [memo]", "Add a memo to your transaction")
+  .option("-n, --network [name]", 'Name of network ("gaia" or "consmoshub_3")')
+  .option("-dr, --dry_run", "Print the tx without posting it")
+  .action(async (delegator, options) => {
+    await client.init();
+    const sendOptions = { memo: options.memo, chainName: options.network };
+    const receipt = await client.collectRewards(
+      delegator,
+      sendOptions,
+      options.dry_run
+    );
+    dryRunHeader(options.dry_run);
+    console.log(JSON.stringify(receipt, null, 2));
+  });
+
+function dryRunHeader(dryRun) {
+  if (dryRun) {
+    console.log("------ Dry Run ----- ");
+  } else {
+    console.log(" ===== Executing ===== ");
+  }
+}
 
 program.parse(process.argv);
