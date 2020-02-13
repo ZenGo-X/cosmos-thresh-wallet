@@ -19,7 +19,7 @@ yarn build
 Built files will be located in the `dist` folder.
 
 
-## Demo
+## Running the Code
 You can run a demo using the command line.  
 Server:
 ```sh
@@ -65,6 +65,8 @@ Exmpale:
 ./demo/client address --index 1
 ```
 
+## Demo
+![demo](./assets/cosmos-thresh-demo.gif)
 
 ## License
 GPL-3.0
