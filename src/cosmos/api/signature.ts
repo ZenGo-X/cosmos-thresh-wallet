@@ -6,11 +6,11 @@ type CreateSignMessageParams = {
 
 export const createSignMessage = (
   jsonTx: any,
-  params: CreateSignMessageParams
+  params: CreateSignMessageParams,
 ) => {
   const fee = {
     amount: jsonTx.fee.amount || [],
-    gas: jsonTx.fee.gas
+    gas: jsonTx.fee.gas,
   };
 
   return JSON.stringify(
@@ -20,8 +20,8 @@ export const createSignMessage = (
       msgs: jsonTx.msg,
       sequence: params.sequence,
       account_number: params.accountNumber,
-      chain_id: params.chainId
-    })
+      chain_id: params.chainId,
+    }),
   );
 };
 
@@ -29,15 +29,15 @@ export const createSignature = (
   signature: any,
   sequence: number,
   accountNumber: number,
-  publicKey: Buffer
+  publicKey: Buffer,
 ) => ({
-  signature: signature.toString("base64"),
+  signature: signature.toString('base64'),
   account_number: accountNumber,
   sequence,
   pub_key: {
-    type: "tendermint/PubKeySecp256k1",
-    value: publicKey.toString("base64")
-  }
+    type: 'tendermint/PubKeySecp256k1',
+    value: publicKey.toString('base64'),
+  },
 });
 
 export const removeEmptyProperties = (jsonTx: any): any => {
@@ -45,14 +45,14 @@ export const removeEmptyProperties = (jsonTx: any): any => {
     return jsonTx.map(removeEmptyProperties);
   }
 
-  if (typeof jsonTx !== "object") {
+  if (typeof jsonTx !== 'object') {
     return jsonTx;
   }
 
   const sorted: any = {};
   Object.keys(jsonTx)
     .sort()
-    .forEach(key => {
+    .forEach((key) => {
       if (jsonTx[key] === undefined || jsonTx[key] === null) return;
       sorted[key] = removeEmptyProperties(jsonTx[key]);
     });
