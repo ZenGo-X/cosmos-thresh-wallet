@@ -31,7 +31,7 @@
     "request": "^2.88.0",
     "request-promise": "^4.2.5",
     "secp256k1": "^3.8.0",
-    "ws": "^7.2.1"
+    "ws": "^7.4.6"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.16.0",
