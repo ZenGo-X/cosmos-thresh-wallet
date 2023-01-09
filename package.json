@@ -27,7 +27,7 @@
     "debug": "^4.1.1",
     "elliptic": "^6.5.2",
     "lowdb": "^1.0.0",
-    "luxon": "^1.21.3",
+    "luxon": "^1.28.1",
     "request": "^2.88.0",
     "request-promise": "^4.2.5",
     "secp256k1": "^3.8.0",
